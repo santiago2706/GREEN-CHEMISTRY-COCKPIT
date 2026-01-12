@@ -1,8 +1,6 @@
-<a>
-    <img style="display: flex; justify-content: center; align-items: center;" src="https://i.imgur.com/msEYQXI.png" width=50%></img>
-</a>
+<img width="2048" height="2048" alt="Gemini_Generated_Image_j5jz99j5jz99j5jz" src="https://github.com/user-attachments/assets/b2028cd9-69f0-44a6-b104-724691ca2dac" />
 
-![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white) ![CSS](https://img.shields.io/badge/css-%23663399.svg?style=for-the-badge&logo=css&logoColor=white) ![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
+![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white) ![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
   
   # Greenmistry AI
   
