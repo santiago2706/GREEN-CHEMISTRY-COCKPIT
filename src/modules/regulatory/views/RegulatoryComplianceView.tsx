@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ShieldCheck, AlertCircle, FileText, ChevronLeft, ArrowRight } from 'lucide-react';
 import { useNotificationStore } from '@core/stores/useNotificationStore';
 import { useReactionStore } from '@core/stores/useReactionStore';
+import { analyzeChemistry } from '@core/utils/chemistryEngine';
+import { useMemo } from 'react';
 
 interface RiskItemProps {
     label: string;
@@ -25,46 +27,29 @@ const RiskItem: React.FC<RiskItemProps> = ({ label, severity }) => (
     </div>
 );
 
-export const RegulatoryComplianceView: React.FC = () => {
+const RegulatoryComplianceView: React.FC = () => {
     const navigate = useNavigate();
-    const { activeMixture: mixture } = useReactionStore();
+    const {
+        activeMixture: mixture,
+        reactionTemp,
+        reactionPH,
+        mixingSpeed,
+        pressure,
+        processType
+    } = useReactionStore();
     const { notify } = useNotificationStore();
     const [isExporting, setIsExporting] = useState(false);
 
-    // Dynamic risk analysis logic
-    const analyzeRisk = () => {
-        if (mixture.length === 0) return { level: 'green' as const, items: [{ label: 'Sistema Certificado: Sin sustancias activas', severity: 'low' as const }] };
+    // Dynamic risk analysis from central engine
+    const analysis = useMemo(() =>
+        analyzeChemistry(mixture, reactionTemp, reactionPH, mixingSpeed, pressure, 'audit'),
+        [mixture, reactionTemp, reactionPH, mixingSpeed, pressure]
+    );
 
-        const highRisk = mixture.filter(c => c.hazard === 'high');
-        const restricted = mixture.filter(c => c.regulatory.reachStatus === 'restricted' || c.regulatory.isAnnexXVII);
-        const svhc = mixture.filter(c => c.regulatory.reachStatus === 'svhc');
+    const riskLevel: 'red' | 'yellow' | 'green' =
+        (analysis.metrics.complianceRisk ?? 0) > 70 ? 'red' :
+            (analysis.metrics.complianceRisk ?? 0) > 30 ? 'yellow' : 'green';
 
-        const riskItems: { label: string, severity: 'high' | 'medium' | 'low' }[] = [];
-
-        if (restricted.length > 0) {
-            riskItems.push({ label: `Violación REACH Annex XVII: ${restricted.map(c => c.name).join(', ')}`, severity: 'high' });
-        }
-        if (svhc.length > 0) {
-            riskItems.push({ label: `Sustancias Altamente Preocupantes (SVHC) detectadas: ${svhc.map(c => c.cas).join(', ')}`, severity: 'medium' });
-        }
-        if (highRisk.length > 0) {
-            riskItems.push({ label: `Punto Crítico de Toxicidad: ${highRisk.length} componentes`, severity: 'high' });
-        }
-
-        if (riskItems.length === 0) {
-            riskItems.push({ label: 'Sustitución química validada por terceros', severity: 'low' });
-            riskItems.push({ label: 'Cumplimiento REACH Art. 33 exitoso', severity: 'low' });
-        }
-
-        let level: 'red' | 'yellow' | 'green' = 'green';
-        if (restricted.length > 0 || highRisk.length > 1) level = 'red';
-        else if (svhc.length > 0 || highRisk.length > 0) level = 'yellow';
-
-        return { level, items: riskItems };
-    };
-
-    const riskAnalysis = analyzeRisk();
-    const riskLevel = riskAnalysis.level;
     const isComplianceReady = riskLevel === 'green';
 
     const handleExport = () => {
@@ -87,10 +72,10 @@ export const RegulatoryComplianceView: React.FC = () => {
                     <div>
                         <h1 className={`text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r mb-2 flex items-center gap-3 ${riskLevel === 'green' ? 'from-emerald-400 to-cyan-400' : 'from-red-400 to-amber-400'}`}>
                             {riskLevel === 'green' ? <ShieldCheck className="w-8 h-8 text-emerald-400" /> : <AlertTriangle className="w-8 h-8 text-red-400" />}
-                            Cumplimiento Regulatorio y Riesgo
+                            Cumplimiento: {processType}
                         </h1>
                         <p className="text-slate-400 text-sm max-w-xl leading-relaxed border-l-2 border-red-500/30 pl-4">
-                            Evaluación normativa del proceso químico según estándares <span className="text-slate-300">REACH, EPA y OSHA</span>.
+                            Evaluación normativa según estándares <span className="text-slate-300">REACH, EPA y OSHA</span>.
                         </p>
                     </div>
                     <div className="flex gap-2">
@@ -168,13 +153,19 @@ export const RegulatoryComplianceView: React.FC = () => {
                             <h3 className="text-sm font-semibold text-slate-200 mb-6 flex items-center justify-between">
                                 <span>Detalle de Riesgos Detectados</span>
                                 <span className={`px-2 py-1 rounded text-xs ${riskLevel === 'green' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-slate-400'}`}>
-                                    {isComplianceReady ? 'Sistema Certificado' : `${riskAnalysis.items.length} Alertas Detectadas`}
+                                    {isComplianceReady ? 'Sistema Certificado' : `${analysis.regulatoryFlags?.length || 0} Alertas Detectadas`}
                                 </span>
                             </h3>
                             <div className="space-y-4 flex-1">
-                                {riskAnalysis.items.map((item, idx) => (
-                                    <RiskItem key={idx} label={item.label} severity={item.severity} />
+                                {analysis.regulatoryFlags?.map((flag, idx) => (
+                                    <RiskItem key={idx} label={flag.label} severity={flag.severity} />
                                 ))}
+                                {(!analysis.regulatoryFlags || analysis.regulatoryFlags.length === 0) && (
+                                    <>
+                                        <RiskItem label="Sustitución química validada por terceros" severity="low" />
+                                        <RiskItem label="Cumplimiento REACH Art. 33 exitoso" severity="low" />
+                                    </>
+                                )}
                             </div>
 
                             <div className="mt-6 pt-4 border-t border-white/5">

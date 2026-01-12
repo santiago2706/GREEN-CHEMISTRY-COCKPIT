@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Activity,
@@ -9,53 +9,55 @@ import {
     ChevronRight,
     Beaker
 } from 'lucide-react';
-import { useDemoState } from '@core/hooks/useDemoState';
-
-interface ProcessStage {
-    id: string;
-    title: string;
-    description: string;
-    status: 'stable' | 'critical' | 'warning';
-    details: string;
-    impacts: {
-        toxicity: number;
-        waste: number;
-        bioMaterials: number;
-        regulatory: 'High' | 'Medium' | 'Low';
-    };
-}
-
-const stages: ProcessStage[] = [
-    {
-        id: 'reaction-basis',
-        title: 'Contexto del Proceso',
-        description: 'Síntesis basada en fase líquida halogenada.',
-        status: 'warning',
-        details: 'Tipo de Reacción: Sustitución Nucleofílica. Solventes: Cloroformo / Diclorometano.',
-        impacts: { toxicity: 85, waste: 40, bioMaterials: 10, regulatory: 'High' }
-    },
-    {
-        id: 'catalytic-reaction',
-        title: '1. Reacción Catalítica & 2. Separación',
-        description: 'Etapa de filtración y destilación térmica.',
-        status: 'stable',
-        details: 'Catalizador base metálica. Alta demanda energética en destilación.',
-        impacts: { toxicity: 20, waste: 15, bioMaterials: 30, regulatory: 'Low' }
-    },
-    {
-        id: 'purification',
-        title: '3. Purificación y Residuos',
-        description: 'Gestión de subproductos y refinamiento.',
-        status: 'critical',
-        details: 'Generación de lodos tóxicos no tratables in-situ.',
-        impacts: { toxicity: 95, waste: 90, bioMaterials: 5, regulatory: 'High' }
-    }
-];
+import { useReactionStore } from '@core/stores/useReactionStore';
+import { analyzeChemistry } from '@core/utils/chemistryEngine';
 
 const ProcessOverviewView: React.FC = () => {
     const navigate = useNavigate();
-    const { isOptimized } = useDemoState();
-    const [selectedStage, setSelectedStage] = useState<ProcessStage>(stages[0]);
+    const { activeMixture: mixture, reactionTemp, reactionPH, mixingSpeed, pressure, processType, isConfirmed } = useReactionStore();
+
+    const analysis = useMemo(() =>
+        analyzeChemistry(mixture, reactionTemp, reactionPH, mixingSpeed, pressure),
+        [mixture, reactionTemp, reactionPH, mixingSpeed, pressure]
+    );
+
+    // Dynamic stage generation
+    const stages = useMemo(() => {
+        const baseStages = [
+            {
+                id: 'input',
+                title: 'Entrada y Preparación',
+                description: `Carga de ${mixture.length} componentes para ${processType}.`,
+                status: isConfirmed ? 'stable' : 'warning',
+                details: `Fase: ${isConfirmed ? 'Confirmada' : 'Pendiente de Validación'}.`,
+                impacts: { toxicity: analysis.metrics.complianceRisk ?? 0, waste: (analysis.metrics.wasteFactor ?? 0) * 10, bioMaterials: 5, regulatory: (analysis.metrics.complianceRisk ?? 0) > 50 ? 'High' : 'Low' as const }
+            },
+            {
+                id: 'process',
+                title: processType === 'Síntesis NPK' ? 'Reacción y Granulación' : 'Procesamiento Térmico',
+                description: `Operación a ${reactionTemp}°C y ${pressure} Bar.`,
+                status: analysis.score > 70 ? 'stable' : analysis.score > 40 ? 'warning' : 'critical',
+                details: `Agitación: ${mixingSpeed} RPM. Score energético: ${analysis.score}.`,
+                impacts: { toxicity: analysis.metrics.vocLevel ?? 0, waste: (analysis.metrics.wasteFactor ?? 0) * 30, bioMaterials: 10, regulatory: analysis.status === 'restricted' ? 'High' : 'Medium' as const }
+            },
+            {
+                id: 'out',
+                title: 'Producto y Residuos',
+                description: 'Finalización de lote industrial.',
+                status: analysis.status === 'nominal' ? 'stable' : 'warning',
+                details: `Impacto Carbono: ${analysis.metrics.carbonFootprint.toFixed(2)}. Waste Factor: ${(analysis.metrics.wasteFactor ?? 0).toFixed(2)}.`,
+                impacts: { toxicity: (analysis.metrics.complianceRisk ?? 0) / 2, waste: (analysis.metrics.wasteFactor ?? 0) * 50, bioMaterials: 15, regulatory: 'Low' as const }
+            }
+        ];
+        return baseStages;
+    }, [mixture, processType, isConfirmed, analysis, reactionTemp, pressure, mixingSpeed]);
+
+    const [selectedStage, setSelectedStage] = useState(stages[0]);
+
+    // Sync selected stage if stages change
+    useEffect(() => {
+        setSelectedStage((prev: any) => stages.find(s => s.id === prev.id) || stages[0]);
+    }, [stages]);
 
     const getStatusColor = (status: string) => {
         if (status === 'critical') return 'border-red-500 text-red-400';
@@ -80,8 +82,8 @@ const ProcessOverviewView: React.FC = () => {
                         <p className="text-slate-400 text-sm">Modelo técnico del proceso actual</p>
                     </div>
                     <div className="text-right">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/5">
-                            Estado base (sin optimización)
+                        <span className={`text-[10px] font-bold uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/5 ${analysis.status === 'nominal' ? 'text-emerald-400 border-emerald-500/20' : 'text-amber-500 border-amber-500/20'}`}>
+                            {isConfirmed ? `PROCESO EN CURSO: ${processType}` : 'DEFINICIÓN PENDIENTE'}
                         </span>
                     </div>
                 </header>
@@ -149,15 +151,15 @@ const ProcessOverviewView: React.FC = () => {
                                 <div>
                                     <div className="flex justify-between items-center mb-3">
                                         <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Toxicidad Estimada</span>
-                                        <div className={`flex items-center gap-1 text-xs font-bold ${selectedStage.impacts.toxicity > 70 ? 'text-red-400' : 'text-emerald-400'}`}>
-                                            {selectedStage.impacts.toxicity > 70 ? 'ALTO' : 'BAJO'}
+                                        <div className={`flex items-center gap-1 text-xs font-bold ${(selectedStage.impacts.toxicity ?? 0) > 70 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                            {(selectedStage.impacts.toxicity ?? 0) > 70 ? 'ALTO' : 'BAJO'}
                                             <AlertTriangle className="w-3 h-3" />
                                         </div>
                                     </div>
                                     <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
                                         <div
-                                            className={`h-full transition-all duration-1000 ${selectedStage.impacts.toxicity > 70 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'}`}
-                                            style={{ width: `${selectedStage.impacts.toxicity}%` }}
+                                            className={`h-full transition-all duration-1000 ${(selectedStage.impacts.toxicity ?? 0) > 70 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'}`}
+                                            style={{ width: `${selectedStage.impacts.toxicity ?? 0}%` }}
                                         ></div>
                                     </div>
                                 </div>
@@ -209,9 +211,9 @@ const ProcessOverviewView: React.FC = () => {
 
                             <div className="mt-10 p-4 bg-white/5 rounded-2xl border border-white/5">
                                 <p className="text-[10px] text-slate-400 leading-relaxed italic">
-                                    {isOptimized
-                                        ? "Cálculo actualizado tras la aplicación de sustitución de solventes halogenados por alternativas verdes base-limoneno."
-                                        : "Los datos mostrados corresponden a mediciones históricas del proceso sin aplicar optimizaciones de substitución química."
+                                    {analysis.status === 'nominal'
+                                        ? "Los parámetros actuales cumplen con los criterios de sostenibilidad y seguridad industrial."
+                                        : analysis.justification
                                     }
                                 </p>
                             </div>

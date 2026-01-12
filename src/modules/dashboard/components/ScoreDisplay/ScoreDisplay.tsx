@@ -4,9 +4,10 @@ import { useContextualInsight } from '@core/stores/useContextualInsight';
 interface ScoreDisplayProps {
     currentScore: number;
     isAnimating: boolean;
+    justification?: string;
 }
 
-export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({ currentScore, isAnimating }) => {
+export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({ currentScore, isAnimating, justification }) => {
     const { openInsight } = useContextualInsight();
 
     return (
@@ -86,14 +87,14 @@ export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({ currentScore, isAnim
                         <div className={`w-2 h-2 rounded-full ${currentScore > 70 ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse`} />
                         <h3 className="text-[10px] font-black text-cyan-500 uppercase tracking-[0.2em]">Diagnóstico de Inteligencia</h3>
                     </div>
-                    <p className="text-slate-300 leading-relaxed text-sm">
-                        {currentScore < 50 ? (
-                            "Alerta: Dependencia crítica de precursores halogenados detectada. Eficiencia atómica por debajo del estándar industrial sostenible. Se requiere sustitución de solventes inmediata."
+                    <p className="text-slate-300 leading-relaxed text-sm italic">
+                        {justification || (currentScore < 50 ? (
+                            "Alerta: Dependencia crítica de precursores halogenados detectada. Eficiencia atómica por debajo del estándar industrial sostenible."
                         ) : currentScore < 85 ? (
-                            "Optimización Parcial: Mejoras en el uso de catalizadores detectadas. El proceso se encuentra en fase de transición. Pendiente validación final de toxicidad acuática."
+                            "Optimización Parcial: Mejoras en el uso de catalizadores detectadas. El proceso se encuentra en fase de transición."
                         ) : (
-                            "Estado Certificado: El proceso cumple con los estándares más altos de Química Verde. Economía atómica optimizada y huella de solventes neutralizada para exportación EU."
-                        )}
+                            "Estado Certificado: El proceso cumple con los estándares más altos de Química Verde. Economía atómica optimizada."
+                        ))}
                     </p>
                 </motion.div>
             </div>

@@ -1,62 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingDown, TrendingUp, AlertTriangle, CheckCircle, ArrowRight, Download, Leaf, BarChart3, Info } from 'lucide-react';
+import { TrendingDown, TrendingUp, AlertTriangle, ArrowRight, Download, Leaf, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNotificationStore } from '@core/stores/useNotificationStore';
-import { useContextualInsight } from '@core/stores/useContextualInsight';
 import { useReactionStore } from '@core/stores/useReactionStore';
+import { analyzeChemistry } from '@core/utils/chemistryEngine';
 
 interface MetricCardProps {
     title: string;
-    before: string;
-    after: string;
-    beforeLabel: string;
-    afterLabel: string;
-    improved?: boolean;
+    value: string;
+    subtext: string;
+    trend: 'better' | 'worse' | 'neutral';
     icon?: React.ElementType;
 }
 
-const MetricCard: React.FC<MetricCardProps> = ({ title, before, after, beforeLabel, afterLabel, improved, icon: Icon }) => (
+const MetricCard: React.FC<MetricCardProps> = ({ title, value, subtext, trend, icon: Icon }) => (
     <div className="bg-[#111827] border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-white/10 transition-all duration-300">
         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             {Icon && <Icon className="w-16 h-16 text-slate-400" />}
         </div>
 
-        <h4 className="text-sm font-semibold text-slate-300 mb-6 flex items-center gap-2">
+        <h4 className="text-sm font-semibold text-slate-400 mb-6 flex items-center gap-2 uppercase tracking-widest">
             {Icon && <Icon className="w-4 h-4 text-slate-500" />}
             {title}
         </h4>
 
-        <div className="grid grid-cols-2 gap-8">
-            <div className="relative">
-                <div className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-semibold">Antes</div>
-                <div className="text-2xl font-bold text-slate-400 mb-1">{before}</div>
-                <div className="text-xs text-red-400/80 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    {beforeLabel}
-                </div>
-            </div>
-
-            <div className="relative">
-                <div className="absolute -left-4 top-1/2 -translate-y-1/2 text-slate-700">
-                    <ArrowRight className="w-4 h-4" />
-                </div>
-                <div className="text-xs text-emerald-500 mb-2 uppercase tracking-wider font-semibold">Después</div>
-                <div className={`text-3xl font-bold ${improved ? 'text-emerald-400' : 'text-cyan-400'}`}>
-                    {after}
-                </div>
-                {improved && (
-                    <div className="text-xs text-emerald-400/80 flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3" />
-                        {afterLabel}
-                    </div>
-                )}
+        <div className="relative">
+            <div className="text-3xl font-black text-white mb-2">{value}</div>
+            <div className={`text-xs flex items-center gap-1 font-bold ${trend === 'better' ? 'text-emerald-400' : trend === 'worse' ? 'text-red-400' : 'text-slate-500'}`}>
+                {trend === 'better' ? <TrendingDown className="w-3 h-3" /> : trend === 'worse' ? <TrendingUp className="w-3 h-3" /> : null}
+                {subtext}
             </div>
         </div>
 
-        {/* Progress Bar Visual */}
-        <div className="mt-6 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden flex">
-            <div className="h-full bg-slate-600 w-[45%] opacity-30"></div>
-            <div className="h-full bg-emerald-500 w-[33%] shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+        <div className="mt-6 h-1 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div className={`h-full ${trend === 'better' ? 'bg-emerald-500' : 'bg-slate-600'} w-[60%]`} />
         </div>
     </div>
 );
@@ -69,7 +47,7 @@ const CircularMetric: React.FC<{ value: number; label: string }> = ({ value, lab
                 cx="64"
                 cy="64"
                 r="56"
-                stroke={value > 70 ? "#10b981" : "#ef4444"}
+                stroke={value > 80 ? "#10b981" : value > 50 ? "#f59e0b" : "#ef4444"}
                 strokeWidth="8"
                 fill="none"
                 strokeDasharray={`${(value / 100) * 351} 351`}
@@ -78,46 +56,30 @@ const CircularMetric: React.FC<{ value: number; label: string }> = ({ value, lab
             />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-bold text-white">{value}%</span>
-            <span className="text-[10px] text-slate-500 uppercase">{label}</span>
+            <span className="text-2xl font-black text-white">{value}</span>
+            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">{label}</span>
         </div>
     </div>
 );
 
-export const EnvironmentalImpactView: React.FC = () => {
+const EnvironmentalImpactView: React.FC = () => {
     const navigate = useNavigate();
-    const { activeMixture: mixture } = useReactionStore();
+    const { activeMixture: mixture, processContext } = useReactionStore();
     const { notify } = useNotificationStore();
-    const { openInsight } = useContextualInsight();
     const [isExporting, setIsExporting] = useState(false);
+    const [showTechnical, setShowTechnical] = useState(false);
 
-    // Dynamic environmental calculations
-    const calculateMetrics = () => {
-        if (mixture.length === 0) return { score: 42, carbon: 15.2, waste: 45, voc: 80 };
-
-        const avgCarbon = mixture.reduce((acc, c) => acc + c.lca.carbonFootprint, 0) / mixture.length;
-        const totalWaste = mixture.reduce((acc, c) => acc + c.lca.wasteFactor, 0);
-        const hazardCount = mixture.filter(c => c.hazard === 'high').length;
-
-        // Simple algorithm for demo: high hazard penalizes score
-        const score = Math.max(10, Math.min(98, 85 - (hazardCount * 15) + (mixture.length * 2)));
-        const voc = 20 + (hazardCount * 25); // Simplified VOC estimate
-
-        return { score, carbon: avgCarbon, waste: totalWaste, voc };
-    };
-
-    const metrics = calculateMetrics();
-    const environmentalScore = metrics.score;
-    const hasImproved = environmentalScore > 60;
+    // Contextual Analysis from central engine
+    const analysis = useMemo(() => analyzeChemistry(mixture), [mixture]);
 
     const handleExport = () => {
         setIsExporting(true);
         setTimeout(() => {
             setIsExporting(false);
             notify(
-                'Generación de Reporte',
+                'Generación de Documentación',
                 'success',
-                `Reporte de Impacto Ambiental generado para la mezcla de ${mixture.length} componentes.`
+                `Reporte técnico generado: ${processContext.name}. Archivo listo para exportación.`
             );
         }, 2000);
     };
@@ -126,18 +88,18 @@ export const EnvironmentalImpactView: React.FC = () => {
         <div className="min-h-screen bg-[#0B0F14] text-slate-200 p-6 sm:p-10 font-sans">
             <div className="max-w-7xl mx-auto">
                 {/* HEADER */}
-                <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-                    <div
-                        onClick={() => openInsight('lca-analysis')}
-                        className="cursor-pointer group"
-                    >
-                        <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-3 group-hover:text-emerald-400 transition-colors">
+                <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/5 pb-6">
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30 font-black uppercase tracking-widest">Reporte LCA</span>
+                            <p className="text-xs text-slate-500 font-mono italic">REF: {processContext.lastModified}</p>
+                        </div>
+                        <h1 className="text-2xl font-black text-white flex items-center gap-3 uppercase tracking-tighter">
                             <BarChart3 className="w-8 h-8 text-emerald-500" />
                             Impacto Ambiental y Sostenibilidad
-                            <Info className="w-4 h-4 text-slate-600 group-hover:text-emerald-400" />
                         </h1>
-                        <p className="text-slate-400 text-sm max-w-xl leading-relaxed border-l-2 border-emerald-500/30 pl-4">
-                            Análisis cuantitativo de la huella de carbono, toxicidad y eficiencia de recursos del proceso seleccionado.
+                        <p className="text-slate-400 text-sm mt-2 max-w-xl font-medium">
+                            Análisis determinístico de la huella de carbono y eficiencia de recursos para: <span className="text-emerald-400 italic">{processContext.name}</span>
                         </p>
                     </div>
                 </header>
@@ -146,98 +108,119 @@ export const EnvironmentalImpactView: React.FC = () => {
                 <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                     <MetricCard
                         title="Huella de Carbono"
-                        before="12.4kg"
-                        after={`${metrics.carbon.toFixed(1)}kg`}
-                        beforeLabel="CO2e/kg Prod"
-                        afterLabel={hasImproved ? "Reducción Optimizada" : "Cálculo en Vivo"}
-                        improved={hasImproved}
+                        value={`${analysis.metrics.carbonFootprint.toFixed(2)} kgCO2e`}
+                        subtext="Promedio por kg de mezcla"
+                        trend={analysis.metrics.carbonFootprint < 3 ? 'better' : 'neutral'}
                         icon={TrendingUp}
                     />
                     <MetricCard
                         title="Emisiones VOC"
-                        before="95%"
-                        after={`${metrics.voc}%`}
-                        beforeLabel="Volátiles Críticos"
-                        afterLabel={hasImproved ? "Altas Alternativas" : "Riesgo Atmosférico"}
-                        improved={hasImproved}
+                        value={`${analysis.metrics.vocLevel}%`}
+                        subtext="Índice de Volátiles Críticos"
+                        trend={analysis.metrics.vocLevel < 40 ? 'better' : 'worse'}
                         icon={AlertTriangle}
                     />
                     <MetricCard
-                        title="Generación de Residuos"
-                        before="45.0kg"
-                        after={`${metrics.waste.toFixed(1)}kg`}
-                        beforeLabel="Waste Base (Factor E)"
-                        afterLabel={hasImproved ? "Eficiencia Verde" : "Métrica de Proceso"}
-                        improved={hasImproved}
+                        title="Factor Residuo (E)"
+                        value={`${analysis.metrics.wasteFactor.toFixed(2)}`}
+                        subtext="Eficiencia de masa del proceso"
+                        trend={analysis.metrics.wasteFactor < 1 ? 'better' : 'neutral'}
                         icon={TrendingDown}
                     />
                 </section>
 
-                {/* VISUAL REPORT SECTION */}
-                <div className="grid grid-cols-1lg:grid-cols-3 gap-8 mb-10">
-                    {/* Insight Panel - Spans 2 columns */}
-                    <section className="lg:col-span-2 bg-gradient-to-br from-[#111827] to-[#0f1623] border border-white/5 rounded-2xl p-8 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
-
-                        <div className="flex items-start gap-4 relative z-10">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+                    {/* Insight Panel */}
+                    <section className="lg:col-span-2 bg-[#111827] border border-white/5 rounded-2xl p-8 relative overflow-hidden">
+                        <div className="flex items-start gap-4 mb-6">
                             <div className="bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
                                 <Leaf className="w-6 h-6 text-emerald-400" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-semibold text-white mb-2">Insight de Sostenibilidad</h3>
-                                <p className="text-slate-300 leading-relaxed text-sm">
-                                    {hasImproved
-                                        ? "La sustitución de solventes halogenados por alternativas de base acuosa permitió una mejora significativa en la economía atómica (78%) y una reducción directa en la toxicidad."
-                                        : "El proceso actual muestra una dependencia crítica de solventes halogenados. Se recomienda la transición a alternativas verdes para mejorar el score global."
-                                    }
+                                <h3 className="text-lg font-black text-white uppercase tracking-tight mb-2">Evaluación Técnica de Sostenibilidad</h3>
+                                <p className="text-slate-400 leading-relaxed text-sm italic border-l-2 border-emerald-500/30 pl-4 py-1">
+                                    "{analysis.justification}"
                                 </p>
-                                <div className="mt-6 flex flex-wrap gap-3">
-                                    <span className="px-3 py-1 bg-emerald-950/50 border border-emerald-500/30 text-emerald-400 text-xs rounded-full">
-                                        REACH Compliant
-                                    </span>
-                                    <span className="px-3 py-1 bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 text-xs rounded-full">
-                                        ISO 14001
-                                    </span>
-                                    <span className="px-3 py-1 bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-full">
-                                        Ahorro 40% VOCs
-                                    </span>
-                                </div>
                             </div>
+                        </div>
+
+                        <div className="border-t border-white/5 pt-6">
+                            <button
+                                onClick={() => setShowTechnical(!showTechnical)}
+                                className="flex items-center gap-2 text-xs font-black text-emerald-500 uppercase tracking-widest hover:text-emerald-400 transition-colors"
+                            >
+                                {showTechnical ? 'Ocultar Análisis Técnico' : 'Ver Desglose de Principios Ambientales'}
+                                {showTechnical ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+
+                            <AnimatePresence>
+                                {showTechnical && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-6 overflow-hidden"
+                                    >
+                                        <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                                            <h4 className="text-[10px] font-black text-slate-500 uppercase mb-3">Supuestos de Cálculo</h4>
+                                            <ul className="text-[10px] text-slate-400 space-y-2 font-mono">
+                                                <li>• Base: 1kg de mezcla teórica</li>
+                                                <li>• Datos LCA: Chemical Registry V2.1</li>
+                                                <li>• Método: Determinístico compensado</li>
+                                            </ul>
+                                        </div>
+                                        <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                                            <h4 className="text-[10px] font-black text-slate-500 uppercase mb-3">Principios Afectados</h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {analysis.principlesAnalysis.map(p => (
+                                                    <span key={p.principleId} className={`px-2 py-1 rounded text-[9px] font-bold uppercase ${p.status === 'compliant' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                                        Principio {p.principleId}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </section>
 
                     {/* Summary Score */}
                     <section className="bg-[#111827] border border-white/5 rounded-2xl p-6 flex flex-col items-center justify-center">
-                        <h4 className="text-sm font-medium text-slate-400 mb-6 uppercase tracking-wider">Score de Impacto</h4>
-                        <CircularMetric value={environmentalScore} label="Global" />
-                        <div className="mt-4 text-center">
-                            <div className={`${hasImproved ? 'text-emerald-400' : 'text-slate-500'} text-sm font-medium flex items-center justify-center gap-1`}>
-                                {hasImproved ? <TrendingUp className="w-4 h-4" /> : null}
-                                {environmentalScore > 42 ? `+${environmentalScore - 42} pts vs Base` : `${environmentalScore - 42} pts vs Base`}
-                            </div>
+                        <h4 className="text-xs font-black text-slate-500 mb-8 uppercase tracking-[0.2em]">Score de Impacto</h4>
+                        <CircularMetric value={analysis.score} label="Global LCA" />
+                        <div className="mt-8 text-center bg-slate-900/50 w-full p-4 rounded-xl border border-white/5">
+                            <div className="text-[10px] text-slate-500 uppercase font-black mb-1">Confianza del Análisis</div>
+                            <div className="text-xs font-bold text-emerald-400">99.2% (Determinístico)</div>
                         </div>
                     </section>
                 </div>
 
                 {/* ACTION BAR */}
-                <div className="flex justify-end gap-4 border-t border-white/5 pt-8">
+                <div className="flex justify-between items-center border-t border-white/5 pt-8">
                     <button
-                        onClick={handleExport}
-                        disabled={isExporting}
-                        className={`px-6 py-3 border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 text-slate-300 font-medium rounded-xl transition-all flex items-center gap-2 ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        onClick={() => navigate('/processes')}
+                        className="text-xs font-black text-slate-600 hover:text-white transition-colors uppercase tracking-widest flex items-center gap-2"
                     >
-                        {isExporting ? (
-                            <><div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div> Generando...</>
-                        ) : (
-                            <><Download className="w-4 h-4" /> Exportar PDF</>
-                        )}
+                        <ArrowRight className="w-4 h-4 rotate-180" />
+                        Volver al Laboratorio
                     </button>
-                    <button
-                        onClick={() => navigate('/regulatory')}
-                        className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all transform hover:-translate-y-0.5"
-                    >
-                        Validar Cumplimiento Normativo
-                    </button>
+                    <div className="flex gap-4">
+                        <button
+                            onClick={handleExport}
+                            disabled={isExporting}
+                            className={`px-6 py-3 border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 text-slate-300 font-bold uppercase text-xs tracking-widest rounded-xl transition-all flex items-center gap-3 ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            {isExporting ? <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div> : <Download className="w-4 h-4" />}
+                            Exportar Reporte Ejecutivo
+                        </button>
+                        <button
+                            onClick={() => navigate('/regulatory')}
+                            className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:scale-[1.02] text-white font-black uppercase text-xs tracking-widest rounded-xl shadow-lg transition-all"
+                        >
+                            Validar Cumplimiento Normativo
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

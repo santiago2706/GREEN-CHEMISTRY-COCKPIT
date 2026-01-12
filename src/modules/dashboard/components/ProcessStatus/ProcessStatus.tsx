@@ -1,50 +1,51 @@
 import React from 'react';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, BarChart } from 'lucide-react';
 
 interface ProcessStatusProps {
     score: number;
 }
 
 export const ProcessStatus: React.FC<ProcessStatusProps> = ({ score }) => {
+    // Dynamic derivation of sub-indicators (simulated logic)
+    const getStatus = (val: number) => {
+        if (val > 80) return { label: 'Óptimo', color: 'text-emerald-400', bg: 'bg-emerald-400' };
+        if (val > 50) return { label: 'Aceptable', color: 'text-amber-400', bg: 'bg-amber-400' };
+        return { label: 'Deficiente', color: 'text-red-400', bg: 'bg-red-400' };
+    };
+
+    const atomicEff = getStatus(score);
+    const renewable = getStatus(score - 20); // Generally lower
+    const waste = getStatus(100 - (score / 2)); // Waste is inverseish
+    const energy = getStatus(score - 10);
+
     return (
-        <div className="backdrop-blur-xl bg-slate-900/40 border border-slate-700/50 rounded-xl p-6 shadow-xl">
-            <h3 className="text-lg font-semibold mb-6 text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-cyan-400" />
-                Estado del Proceso Químico
+        <div className="backdrop-blur-xl bg-[#111827]/60 border border-white/5 rounded-xl p-6 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-5">
+                <BarChart className="w-24 h-24 text-white" />
+            </div>
+
+            <h3 className="text-sm font-bold mb-6 text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-cyan-500" />
+                Matriz de Desempeño
             </h3>
 
-            <div className="space-y-4">
-                <div className="flex items-center justify-between py-3 border-b border-slate-700/30">
-                    <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 bg-emerald-400 rounded-full shadow-lg shadow-emerald-400/50"></div>
-                        <span className="text-slate-300">Eficiencia Atómica</span>
+            <div className="space-y-1">
+                {[
+                    { label: 'Eficiencia Atómica', status: atomicEff },
+                    { label: 'Materias Renovables', status: renewable },
+                    { label: 'Gestión Residuo (Factor E)', status: waste },
+                    { label: 'Eficiencia Energética', status: energy }
+                ].map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between py-3 border-b border-white/5 last:border-0 group">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-1.5 h-1.5 ${item.status.bg} rounded-full shadow-[0_0_8px_rgba(255,255,255,0.2)]`} />
+                            <span className="text-slate-400 text-xs font-medium group-hover:text-slate-200 transition-colors uppercase tracking-wider">{item.label}</span>
+                        </div>
+                        <span className={`${item.status.color} text-[10px] font-black uppercase tracking-widest`}>
+                            {item.status.label}
+                        </span>
                     </div>
-                    <span className="text-emerald-400 text-sm font-medium">Óptimo</span>
-                </div>
-
-                <div className="flex items-center justify-between py-3 border-b border-slate-700/30">
-                    <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 bg-red-400 rounded-full shadow-lg shadow-red-400/50"></div>
-                        <span className="text-slate-300">Uso de Materias Renovables</span>
-                    </div>
-                    <span className="text-red-400 text-sm font-medium">Deficiente</span>
-                </div>
-
-                <div className="flex items-center justify-between py-3 border-b border-slate-700/30">
-                    <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 bg-amber-400 rounded-full shadow-lg shadow-amber-400/50"></div>
-                        <span className="text-slate-300">Generación de Residuos</span>
-                    </div>
-                    <span className="text-amber-400 text-sm font-medium">Aceptable</span>
-                </div>
-
-                <div className="flex items-center justify-between py-3">
-                    <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 bg-cyan-400 rounded-full shadow-lg shadow-cyan-400/50"></div>
-                        <span className="text-slate-300">Eficiencia Energética</span>
-                    </div>
-                    <span className="text-cyan-400 text-sm font-medium">Aceptable</span>
-                </div>
+                ))}
             </div>
         </div>
     );
